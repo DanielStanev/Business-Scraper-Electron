@@ -1,0 +1,39 @@
+# Third-Party Licenses
+
+This project uses the following third-party components, each with their respective licenses:
+
+## C++ Dependencies
+
+### libcurl
+- **License**: MIT/X derivative license (curl license)
+- **Usage**: HTTP client functionality for API requests
+- **Source**: Available at https://curl.se/libcurl/
+
+### jsoncpp
+- **License**: MIT License
+- **Usage**: JSON parsing functionality
+- **Source**: Available at https://github.com/open-source-parsers/jsoncpp
+
+## Node.js/Electron Dependencies
+
+### Electron
+- **License**: MIT License
+- **Usage**: Cross-platform desktop application framework
+- **Source**: Available at https://github.com/electron/electron
+- **Copyright**: Copyright (c) 2013-2020 GitHub Inc.
+
+### electron-builder
+- **License**: MIT License
+- **Usage**: Application packaging and distribution
+- **Source**: Available at https://github.com/electron-userland/electron-builder
+- **Copyright**: Copyright (c) 2015 Loopline Systems
+
+### electron-store
+- **License**: MIT License
+- **Usage**: Persistent data storage for Electron applications
+- **Source**: Available at https://github.com/sindresorhus/electron-store
+- **Copyright**: Copyright (c) Sindre Sorhus
+
+## Runtime Dependencies
+
+This application may also include additional transitive dependencies from the above packages. For a complete list of all dependencies and their licenses, please refer to the `node_modules` directory after installation or use `npm list` to view the dependency tree.

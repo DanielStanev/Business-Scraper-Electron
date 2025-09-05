@@ -1,0 +1,136 @@
+{
+  "name": "business-scraper-electron",
+  "version": "1.0.0",
+  "description": "A professional desktop application for searching and collecting business information using the Google Maps API",
+  "main": "src/electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "predev": "npm run setup",
+    "dev": "electron . --dev",
+    "dev-debug": "electron . --dev --devtools",
+    "setup": "npm run build-cpp && npm run setup-config",
+    "setup-config": "test -f config.ini || cp config.template.ini config.ini",
+    "build": "electron-builder",
+    "build-cpp": "./build.sh",
+    "pack": "npm run build-cpp && electron-builder --dir",
+    "dist": "npm run build-cpp && electron-builder",
+    "dist-win": "npm run build-cpp && electron-builder --win",
+    "dist-mac": "npm run build-cpp && electron-builder --mac",
+    "dist-linux": "npm run build-cpp && electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "business",
+    "scraper",
+    "google-maps",
+    "electron",
+    "desktop"
+  ],
+  "author": {
+    "name": "DanielStanev",
+    "email": "daniel.stanev@protonmail.com"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DanielStanev/Business-Scraper-Electron.git"
+  },
+  "homepage": "https://github.com/DanielStanev/Business-Scraper-Electron#readme",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "build": {
+    "appId": "com.danielstanev.business-scraper",
+    "productName": "Business Scraper",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/electron/**/*",
+      "src/renderer/**/*",
+      "build/business_scraper",
+      "config.template.ini",
+      "LICENSE",
+      "LICENSE_THIRD_PARTY",
+      "assets/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/business_scraper",
+        "to": "business_scraper"
+      },
+      {
+        "from": "config.template.ini",
+        "to": "config.template.ini"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "msi",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "DanielStanev",
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Business Scraper",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    },
+    "msi": {
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Business Scraper"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icons",
+      "category": "Office",
+      "desktop": {
+        "Name": "Business Scraper",
+        "Comment": "A professional desktop application for searching and collecting business information using the Google Maps API",
+        "Keywords": "business;scraper;google;maps;search;data",
+        "StartupWMClass": "Business Scraper"
+      }
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "assets/icon.icns"
+    }
+  }
+}
