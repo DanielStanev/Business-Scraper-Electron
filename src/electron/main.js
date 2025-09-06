@@ -12,12 +12,12 @@ class BusinessScraperApp {
         this.mainWindow = null;
         this.isDev = process.argv.includes('--dev');
         this.showDevTools = process.argv.includes('--devtools');
-        
+
         // Fix GPU process issues on Windows
         if (process.platform === 'win32') {
             app.disableHardwareAcceleration();
         }
-        
+
         this.setupApp();
     }
 
@@ -85,7 +85,52 @@ class BusinessScraperApp {
         });
     }
 
+    initializeConfig() {
+        try {
+            // Determine paths for config files
+            const templatePath = this.isDev
+                ? path.join(__dirname, '../../config.template.ini')
+                : path.join(process.resourcesPath, 'config.template.ini');
+
+            // Always use user data directory for the actual config file
+            // This ensures it's writable even in AppImage environments
+            const userConfigPath = path.join(app.getPath('userData'), 'config.ini');
+
+            // For C++ backend, determine where it should look for config
+            let appConfigPath;
+            if (this.isDev) {
+                appConfigPath = path.join(__dirname, '../../config.ini');
+            } else {
+                // In production, try resources first, but fall back to user data
+                const resourcesConfigPath = path.join(process.resourcesPath, 'config.ini');
+                appConfigPath = fs.existsSync(resourcesConfigPath) ? resourcesConfigPath : userConfigPath;
+            }
+
+            console.log('Initializing config...');
+            console.log('  Template path:', templatePath);
+            console.log('  User config path:', userConfigPath);
+            console.log('  App config path:', appConfigPath);
+
+            // If user config doesn't exist but template does, copy it
+            if (!fs.existsSync(userConfigPath) && fs.existsSync(templatePath)) {
+                console.log('Creating user config.ini from template...');
+                fs.copyFileSync(templatePath, userConfigPath);
+            }
+
+            // If we're in development and app config doesn't exist, copy from user config
+            if (this.isDev && !fs.existsSync(appConfigPath) && fs.existsSync(userConfigPath)) {
+                console.log('Creating app config.ini from user config...');
+                fs.copyFileSync(userConfigPath, appConfigPath);
+            }
+        } catch (error) {
+            console.warn('Failed to initialize config:', error.message);
+        }
+    }
+
     setupIpcHandlers() {
+        // Initialize configuration on startup
+        this.initializeConfig();
+
         // Get application paths
         ipcMain.handle('get-app-paths', () => {
             return {
@@ -103,23 +148,21 @@ class BusinessScraperApp {
 [API]
 google_maps_api_key=${config.apiKey}
 `;
-                
+
                 // Save to user data directory (for persistence)
                 const userConfigPath = path.join(app.getPath('userData'), 'config.ini');
                 fs.writeFileSync(userConfigPath, configContent);
-                
-                // Also save to application directory (where C++ backend expects it)
-                const appConfigPath = this.isDev 
-                    ? path.join(__dirname, '../../config.ini')  // Development: project root
-                    : path.join(path.dirname(process.execPath), 'config.ini'); // Production: exe directory
-                    
-                try {
-                    fs.writeFileSync(appConfigPath, configContent);
-                } catch (appError) {
-                    console.warn('Could not write to app directory:', appError.message);
-                    // This is not critical if user data directory worked
+
+                // Also try to save to application directory if writable (development mode)
+                if (this.isDev) {
+                    const appConfigPath = path.join(__dirname, '../../config.ini');
+                    try {
+                        fs.writeFileSync(appConfigPath, configContent);
+                    } catch (appError) {
+                        console.warn('Could not write to app directory:', appError.message);
+                    }
                 }
-                
+
                 store.set('config', config);
                 return { success: true };
             } catch (error) {
@@ -151,7 +194,7 @@ google_maps_api_key=${config.apiKey}
             return new Promise((resolve) => {
                 try {
                     console.log('Starting search with params:', searchParams);
-                    
+
                     let executablePath;
                     try {
                         executablePath = this.getExecutablePath();
@@ -164,14 +207,18 @@ google_maps_api_key=${config.apiKey}
                         });
                         return;
                     }
-                    
-                    // Check if config exists in app directory (where C++ backend looks for it)
-                    const appConfigPath = this.isDev 
-                        ? path.join(__dirname, '../../config.ini')
-                        : path.join(path.dirname(process.execPath), 'config.ini');
-                        
+
+                    // Check if config exists - prefer user data directory in production
+                    let appConfigPath;
+                    if (this.isDev) {
+                        appConfigPath = path.join(__dirname, '../../config.ini');
+                    } else {
+                        // In production, use user data directory (AppImage resources are read-only)
+                        appConfigPath = path.join(app.getPath('userData'), 'config.ini');
+                    }
+
                     console.log('Checking config at:', appConfigPath);
-                        
+
                     if (!fs.existsSync(appConfigPath)) {
                         resolve({
                             success: false,
@@ -198,11 +245,21 @@ google_maps_api_key=${config.apiKey}
                     const outputFile = path.join(outputDir, `business-results-${timestamp}.${searchParams.outputFormat}`);
                     args.push('-o', outputFile);
 
-                    // Working directory for production
-                    const cwd = this.isDev 
-                        ? path.join(__dirname, '../..') // Development: project root
-                        : path.dirname(process.execPath); // Production: exe directory
-                    
+                    // Determine working directory and ensure config is available there
+                    let cwd;
+                    if (this.isDev) {
+                        cwd = path.join(__dirname, '../..'); // Development: project root
+                    } else {
+                        // Production: use user data directory where config is writable
+                        cwd = app.getPath('userData');
+
+                        // Ensure config file exists in working directory
+                        const workingConfigPath = path.join(cwd, 'config.ini');
+                        if (!fs.existsSync(workingConfigPath) && fs.existsSync(appConfigPath)) {
+                            fs.copyFileSync(appConfigPath, workingConfigPath);
+                        }
+                    }
+
                     console.log('Spawn configuration:');
                     console.log('  Executable:', executablePath);
                     console.log('  Arguments:', args);
@@ -236,7 +293,7 @@ google_maps_api_key=${config.apiKey}
                         console.log('Process closed with code:', code);
                         console.log('Final stdout:', stdout);
                         console.log('Final stderr:', stderr);
-                        
+
                         if (code === 0) {
                             // Extract CSV data from stdout
                             const csvData = this.extractCSVData(stdout);
@@ -445,18 +502,18 @@ google_maps_api_key=${config.apiKey}
 
     getExecutablePath() {
         const executableName = process.platform === 'win32' ? 'business_scraper.exe' : 'business_scraper';
-        
+
         if (this.isDev) {
             // In development, use the built executable
             if (process.platform === 'win32') {
                 // On Windows, check both Release and root build directories
                 const releasePath = path.join(__dirname, '../../build/Release', executableName);
                 const buildPath = path.join(__dirname, '../../build', executableName);
-                
+
                 console.log('Development mode - checking paths:');
                 console.log('  Release path:', releasePath, 'exists:', fs.existsSync(releasePath));
                 console.log('  Build path:', buildPath, 'exists:', fs.existsSync(buildPath));
-                
+
                 if (fs.existsSync(releasePath)) {
                     return releasePath;
                 } else if (fs.existsSync(buildPath)) {
@@ -473,7 +530,7 @@ google_maps_api_key=${config.apiKey}
             console.log('Production mode - checking path:');
             console.log('  Resources path:', process.resourcesPath);
             console.log('  Executable path:', executablePath, 'exists:', fs.existsSync(executablePath));
-            
+
             if (!fs.existsSync(executablePath)) {
                 // List files in resources directory for debugging
                 console.log('Files in resources directory:');
@@ -487,10 +544,10 @@ google_maps_api_key=${config.apiKey}
                 } catch (err) {
                     console.log('  Error reading directory:', err.message);
                 }
-                
+
                 throw new Error(`Executable not found at: ${executablePath}`);
             }
-            
+
             return executablePath;
         }
     }

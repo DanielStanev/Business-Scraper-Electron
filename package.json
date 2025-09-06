@@ -52,18 +52,12 @@
     "files": [
       "src/electron/**/*",
       "src/renderer/**/*",
-      "build/business_scraper*",
       "config.template.ini",
       "LICENSE",
       "LICENSE_THIRD_PARTY",
       "assets/*"
     ],
     "extraResources": [
-      {
-        "from": "build/business_scraper*",
-        "to": ".",
-        "filter": ["business_scraper*"]
-      },
       {
         "from": "config.template.ini",
         "to": "config.template.ini"
@@ -85,6 +79,10 @@
         }
       ],
       "extraResources": [
+        {
+          "from": "build/business_scraper.exe",
+          "to": "business_scraper.exe"
+        },
         {
           "from": "build/dlls/jsoncpp.dll",
           "to": "jsoncpp.dll"
@@ -131,6 +129,16 @@
         {
           "target": "deb",
           "arch": ["x64"]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "build/business_scraper",
+          "to": "business_scraper"
+        },
+        {
+          "from": "config.template.ini",
+          "to": "config.template.ini"
         }
       ],
       "icon": "assets/icons",
