@@ -35,6 +35,7 @@ This version uses the C++ backend of the previous desktop app, but now uses Elec
 The application can be packaged as both NSIS installer and MSI:
 
 ```bash
+npm install
 npm run dist
 ```
 
@@ -45,10 +46,12 @@ This will create:
 ### macOS
 
 ```bash
+npm install
 npm run dist
 ```
 or
 ```bash
+npm install
 ./build-dist.sh
 ```
 
@@ -57,10 +60,12 @@ Creates: `dist/Business Scraper-1.0.0.dmg`
 ### Linux
 
 ```bash
+npm install
 npm run dist
 ```
 or
 ```bash
+npm install
 ./build-dist.sh
 ```
 
@@ -98,6 +103,39 @@ google_maps_api_key=YOUR_GOOGLE_MAPS_API_KEY
 
 or by configuring in app by clicking the gear icon:
 ![Configuration Dialog](screenshots/config.png)
+
+## Troubleshooting
+
+### Windows MSI Installation Issues
+
+If you're getting permission errors when trying to save your API key after installing via MSI, try these solutions:
+
+#### Error: "EPERM: operation not permitted"
+
+This error typically occurs when the application doesn't have permission to write to the AppData directory. Here are the solutions in order of preference:
+
+1. **Run as Administrator** (Quickest fix)
+   - Right-click on the Business Scraper icon
+   - Select "Run as administrator"
+   - Configure your API key
+   - The app will automatically use fallback locations for future runs
+
+2. **Check Folder Permissions**
+   - Navigate to `C:\Users\[YourUsername]\AppData\Roaming\`
+   - Right-click → Properties → Security
+   - Ensure your user account has "Full control" permissions
+
+3. **Manual Fallback Location**
+   - The app automatically tries to save configuration to your Documents folder if AppData is not writable
+   - Look for a `BusinessScraper` folder in your Documents directory
+
+4. **Use NSIS Installer Instead**
+   - Download the `.exe` installer instead of the `.msi` file
+   - NSIS installers typically have fewer permission restrictions
+
+#### Why This Happens
+
+MSI installers on Windows can sometimes create directories with restrictive permissions, especially in enterprise environments or when Windows User Account Control (UAC) is strictly configured. The application now includes automatic fallback mechanisms to handle these scenarios.
 
 ## License
 

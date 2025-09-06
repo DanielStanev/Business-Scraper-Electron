@@ -24,6 +24,8 @@ class BusinessScraperApp {
     setupApp() {
         // Handle app ready
         app.whenReady().then(() => {
+            // Initialize config handling before creating the window
+            this.initializeConfig();
             this.createMainWindow();
             this.setupIpcHandlers();
         });
@@ -38,6 +40,7 @@ class BusinessScraperApp {
         // Handle app activation (macOS)
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) {
+                this.initializeConfig();
                 this.createMainWindow();
             }
         });
@@ -92,38 +95,111 @@ class BusinessScraperApp {
                 ? path.join(__dirname, '../../config.template.ini')
                 : path.join(process.resourcesPath, 'config.template.ini');
 
+            // Check for existing config in stored location first
+            const storedConfigPath = store.get('configPath', null);
+            
             // Always use user data directory for the actual config file
             // This ensures it's writable even in AppImage environments
-            const userConfigPath = path.join(app.getPath('userData'), 'config.ini');
+            const userDataPath = app.getPath('userData');
+            const userConfigPath = path.join(userDataPath, 'config.ini');
+
+            // Ensure userData directory exists and is writable
+            let primaryConfigPath = userConfigPath;
+            try {
+                this.ensureDirectoryWritable(userDataPath);
+            } catch (userDataError) {
+                console.warn('UserData directory not writable, will use fallback location');
+                // Set up fallback location
+                const documentsPath = app.getPath('documents');
+                const appDocumentsPath = path.join(documentsPath, 'BusinessScraper');
+                primaryConfigPath = path.join(appDocumentsPath, 'config.ini');
+                
+                try {
+                    this.ensureDirectoryWritable(appDocumentsPath);
+                } catch (fallbackError) {
+                    console.error('Neither userData nor Documents directory is writable');
+                }
+            }
 
             // For C++ backend, determine where it should look for config
             let appConfigPath;
             if (this.isDev) {
                 appConfigPath = path.join(__dirname, '../../config.ini');
             } else {
-                // In production, try resources first, but fall back to user data
+                // In production, try resources first, but fall back to stored or primary config
                 const resourcesConfigPath = path.join(process.resourcesPath, 'config.ini');
-                appConfigPath = fs.existsSync(resourcesConfigPath) ? resourcesConfigPath : userConfigPath;
+                if (fs.existsSync(resourcesConfigPath)) {
+                    appConfigPath = resourcesConfigPath;
+                } else if (storedConfigPath && fs.existsSync(storedConfigPath)) {
+                    appConfigPath = storedConfigPath;
+                } else {
+                    appConfigPath = primaryConfigPath;
+                }
             }
 
             console.log('Initializing config...');
             console.log('  Template path:', templatePath);
-            console.log('  User config path:', userConfigPath);
+            console.log('  Primary config path:', primaryConfigPath);
+            console.log('  Stored config path:', storedConfigPath);
             console.log('  App config path:', appConfigPath);
 
-            // If user config doesn't exist but template does, copy it
-            if (!fs.existsSync(userConfigPath) && fs.existsSync(templatePath)) {
-                console.log('Creating user config.ini from template...');
-                fs.copyFileSync(templatePath, userConfigPath);
+            // If no config exists anywhere but template does, create initial config
+            const configExists = (storedConfigPath && fs.existsSync(storedConfigPath)) || 
+                                fs.existsSync(primaryConfigPath) || 
+                                fs.existsSync(appConfigPath);
+                                
+            if (!configExists && fs.existsSync(templatePath)) {
+                console.log('Creating initial config from template...');
+                this.safeWriteFile(primaryConfigPath, fs.readFileSync(templatePath, 'utf8'));
+                store.set('configPath', primaryConfigPath);
             }
 
-            // If we're in development and app config doesn't exist, copy from user config
-            if (this.isDev && !fs.existsSync(appConfigPath) && fs.existsSync(userConfigPath)) {
-                console.log('Creating app config.ini from user config...');
-                fs.copyFileSync(userConfigPath, appConfigPath);
+            // If we're in development and app config doesn't exist, copy from the primary location
+            if (this.isDev && !fs.existsSync(appConfigPath)) {
+                const sourceConfig = storedConfigPath || primaryConfigPath;
+                if (fs.existsSync(sourceConfig)) {
+                    console.log('Creating app config from primary config...');
+                    fs.copyFileSync(sourceConfig, appConfigPath);
+                }
             }
         } catch (error) {
             console.warn('Failed to initialize config:', error.message);
+        }
+    }
+
+    ensureDirectoryWritable(dirPath) {
+        try {
+            // Create directory if it doesn't exist
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+
+            // Test write access by creating a temporary file
+            const testFile = path.join(dirPath, '.write-test');
+            fs.writeFileSync(testFile, 'test');
+            fs.unlinkSync(testFile);
+            
+            console.log('Directory is writable:', dirPath);
+        } catch (error) {
+            console.error('Directory is not writable:', dirPath, error.message);
+            throw new Error(`Cannot write to directory: ${dirPath}. Please check permissions.`);
+        }
+    }
+
+    safeWriteFile(filePath, content) {
+        try {
+            // Ensure the directory exists
+            const dir = path.dirname(filePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+
+            // Write the file
+            fs.writeFileSync(filePath, content);
+            console.log('Successfully wrote file:', filePath);
+        } catch (error) {
+            console.error('Failed to write file:', filePath, error.message);
+            throw error;
         }
     }
 
@@ -150,8 +226,43 @@ google_maps_api_key=${config.apiKey}
 `;
 
                 // Save to user data directory (for persistence)
-                const userConfigPath = path.join(app.getPath('userData'), 'config.ini');
-                fs.writeFileSync(userConfigPath, configContent);
+                const userDataPath = app.getPath('userData');
+                const userConfigPath = path.join(userDataPath, 'config.ini');
+                
+                let configSaved = false;
+                let actualConfigPath = userConfigPath;
+                
+                // Ensure directory is writable before attempting to save
+                try {
+                    this.ensureDirectoryWritable(userDataPath);
+                    this.safeWriteFile(userConfigPath, configContent);
+                    configSaved = true;
+                    console.log('Config saved to primary location:', userConfigPath);
+                } catch (dirError) {
+                    // If userData directory is not writable, try alternative locations
+                    console.error('Cannot write to userData directory:', dirError.message);
+                    
+                    // Try Documents folder as fallback
+                    const documentsPath = app.getPath('documents');
+                    const appDocumentsPath = path.join(documentsPath, 'BusinessScraper');
+                    const fallbackConfigPath = path.join(appDocumentsPath, 'config.ini');
+                    
+                    try {
+                        this.ensureDirectoryWritable(appDocumentsPath);
+                        this.safeWriteFile(fallbackConfigPath, configContent);
+                        console.log('Saved config to fallback location:', fallbackConfigPath);
+                        actualConfigPath = fallbackConfigPath;
+                        configSaved = true;
+                    } catch (fallbackError) {
+                        throw new Error(`Failed to save configuration. Cannot write to userData (${dirError.message}) or Documents folder (${fallbackError.message}). Please run as administrator or check folder permissions.`);
+                    }
+                }
+                
+                if (configSaved) {
+                    // Always store the actual config path that was used
+                    store.set('configPath', actualConfigPath);
+                    store.set('config', config);
+                }
 
                 // Also try to save to application directory if writable (development mode)
                 if (this.isDev) {
@@ -163,28 +274,65 @@ google_maps_api_key=${config.apiKey}
                     }
                 }
 
-                store.set('config', config);
                 return { success: true };
             } catch (error) {
-                return { success: false, error: error.message };
+                console.error('Failed to save configuration:', error.message);
+                return { 
+                    success: false, 
+                    error: `Failed to save configuration: ${error.message}` 
+                };
             }
         });
 
         ipcMain.handle('load-config', async () => {
             try {
-                const configPath = path.join(app.getPath('userData'), 'config.ini');
                 const storedConfig = store.get('config', {});
-
-                if (fs.existsSync(configPath)) {
-                    const configContent = fs.readFileSync(configPath, 'utf8');
-                    const apiKeyMatch = configContent.match(/google_maps_api_key=(.+)/);
-                    if (apiKeyMatch) {
-                        storedConfig.apiKey = apiKeyMatch[1].trim();
+                
+                // Get the stored config path (this will be the actual path that was successfully used)
+                const storedConfigPath = store.get('configPath', null);
+                const userConfigPath = path.join(app.getPath('userData'), 'config.ini');
+                
+                // Determine which config file to read from
+                let configPathsToTry = [];
+                
+                if (storedConfigPath) {
+                    // If we have a stored config path, try it first
+                    configPathsToTry.push(storedConfigPath);
+                }
+                
+                // Always try the default user config path as fallback
+                if (storedConfigPath !== userConfigPath) {
+                    configPathsToTry.push(userConfigPath);
+                }
+                
+                // Try to load from each path until one succeeds
+                let configLoaded = false;
+                for (const configPath of configPathsToTry) {
+                    if (fs.existsSync(configPath)) {
+                        try {
+                            console.log('Attempting to load config from:', configPath);
+                            const configContent = fs.readFileSync(configPath, 'utf8');
+                            const apiKeyMatch = configContent.match(/google_maps_api_key=(.+)/);
+                            if (apiKeyMatch) {
+                                storedConfig.apiKey = apiKeyMatch[1].trim();
+                                configLoaded = true;
+                                console.log('Successfully loaded config from:', configPath);
+                                
+                                // Update the stored path if this is a different location
+                                if (configPath !== storedConfigPath) {
+                                    store.set('configPath', configPath);
+                                }
+                                break;
+                            }
+                        } catch (readError) {
+                            console.warn('Failed to read config file:', configPath, readError.message);
+                        }
                     }
                 }
 
                 return { success: true, config: storedConfig };
             } catch (error) {
+                console.error('Failed to load configuration:', error.message);
                 return { success: false, error: error.message };
             }
         });
@@ -208,13 +356,22 @@ google_maps_api_key=${config.apiKey}
                         return;
                     }
 
-                    // Check if config exists - prefer user data directory in production
+                    // Check if config exists - use the stored config path
                     let appConfigPath;
                     if (this.isDev) {
                         appConfigPath = path.join(__dirname, '../../config.ini');
                     } else {
-                        // In production, use user data directory (AppImage resources are read-only)
-                        appConfigPath = path.join(app.getPath('userData'), 'config.ini');
+                        // In production, use the stored config path (which could be fallback location)
+                        const storedConfigPath = store.get('configPath', null);
+                        const defaultConfigPath = path.join(app.getPath('userData'), 'config.ini');
+                        
+                        if (storedConfigPath && fs.existsSync(storedConfigPath)) {
+                            appConfigPath = storedConfigPath;
+                        } else if (fs.existsSync(defaultConfigPath)) {
+                            appConfigPath = defaultConfigPath;
+                        } else {
+                            appConfigPath = defaultConfigPath; // Will fail later with proper error
+                        }
                     }
 
                     console.log('Checking config at:', appConfigPath);
@@ -250,13 +407,31 @@ google_maps_api_key=${config.apiKey}
                     if (this.isDev) {
                         cwd = path.join(__dirname, '../..'); // Development: project root
                     } else {
-                        // Production: use user data directory where config is writable
-                        cwd = app.getPath('userData');
-
-                        // Ensure config file exists in working directory
-                        const workingConfigPath = path.join(cwd, 'config.ini');
-                        if (!fs.existsSync(workingConfigPath) && fs.existsSync(appConfigPath)) {
-                            fs.copyFileSync(appConfigPath, workingConfigPath);
+                        // Production: determine working directory based on config location
+                        const configDir = path.dirname(appConfigPath);
+                        const defaultUserDataDir = app.getPath('userData');
+                        
+                        // If config is in userData, use userData as working directory
+                        if (configDir === defaultUserDataDir) {
+                            cwd = defaultUserDataDir;
+                        } else {
+                            // If config is in fallback location, we need to copy it to a writable working directory
+                            // or use the config's directory as working directory
+                            try {
+                                // Try to use userData as working directory and copy config there
+                                this.ensureDirectoryWritable(defaultUserDataDir);
+                                const workingConfigPath = path.join(defaultUserDataDir, 'config.ini');
+                                if (!fs.existsSync(workingConfigPath)) {
+                                    fs.copyFileSync(appConfigPath, workingConfigPath);
+                                    console.log('Copied config from fallback to working directory');
+                                }
+                                cwd = defaultUserDataDir;
+                            } catch (copyError) {
+                                console.warn('Could not copy config to userData directory:', copyError.message);
+                                // Use the config's directory as working directory
+                                cwd = configDir;
+                                console.log('Using config directory as working directory:', cwd);
+                            }
                         }
                     }
 

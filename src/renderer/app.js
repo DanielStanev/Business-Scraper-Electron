@@ -169,7 +169,18 @@ class BusinessScraperApp {
                     }
                 }, 2000);
             } else {
-                this.showError('Failed to save configuration: ' + result.error);
+                // Provide more helpful error messages for permission issues
+                let errorMessage = result.error;
+                if (errorMessage.includes('EPERM') || errorMessage.includes('operation not permitted')) {
+                    errorMessage = `Permission denied when saving configuration. This can happen with MSI installations. 
+                    Try one of these solutions:
+                    • Run the application as administrator
+                    • Check that your Documents folder is writable
+                    • Contact support if the issue persists
+                    
+                    Technical details: ${result.error}`;
+                }
+                this.showError('Failed to save configuration: ' + errorMessage);
             }
         } catch (error) {
             this.showError('Failed to save configuration: ' + error.message);
@@ -241,7 +252,20 @@ class BusinessScraperApp {
             if (result.success) {
                 this.showResults(result);
             } else {
-                this.showError(result.error);
+                // Provide more helpful error messages for config-related issues
+                let errorMessage = result.error;
+                if (errorMessage.includes('Configuration file not found')) {
+                    errorMessage = `Configuration file not found. This can happen with MSI installations when permissions are restricted.
+                    
+                    Please try:
+                    • Set your API key using the configuration button (⚙️)
+                    • If that fails, try running the app as administrator
+                    • Check that your Documents folder is writable
+                    
+                    Technical details: ${result.error}`;
+                }
+                
+                this.showError(errorMessage);
                 if (result.output) {
                     // Still try to parse any partial output for status updates
                     const lines = result.output.split('\n');
