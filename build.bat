@@ -10,13 +10,19 @@ if %errorlevel% neq 0 (
     echo Please install CMake from https://cmake.org/download/
     echo Make sure to add CMake to your system PATH during installation
     echo.
-    pause
     exit /b 1
 )
 
 echo Found CMake installation
 
 REM Check if a C++ compiler is available
+where cl >nul 2>&1
+if %errorlevel% equ 0 (
+    echo Found MSVC compiler
+    set GENERATOR="Visual Studio 17 2022"
+    goto :build
+)
+
 where cl >nul 2>&1
 if %errorlevel% equ 0 (
     echo Found MSVC compiler
@@ -31,14 +37,10 @@ if %errorlevel% equ 0 (
     goto :build
 )
 
-echo ERROR: No suitable C++ compiler found
-echo Please install one of the following:
-echo   - Visual Studio 2019 or later with C++ development tools
-echo   - MinGW-w64 compiler
-echo   - MSYS2 with mingw-w64 toolchain
-echo.
-pause
-exit /b 1
+REM Try default generator (let CMake choose)
+echo Using default CMake generator
+set GENERATOR=
+goto :build
 
 :build
 echo.
@@ -49,12 +51,16 @@ echo Configuring project with CMake...
 cd build
 
 REM Configure the project
-cmake .. -G %GENERATOR% -DCMAKE_BUILD_TYPE=Release
+if "%GENERATOR%"=="" (
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="%USERPROFILE%\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+) else (
+    cmake .. -G %GENERATOR% -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="%USERPROFILE%\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+)
 if %errorlevel% neq 0 (
     echo ERROR: CMake configuration failed
-    echo Please check that all dependencies are installed
+    echo Please check that all dependencies are installed and vcpkg is properly set up
+    echo Expected vcpkg location: %USERPROFILE%\vcpkg\scripts\buildsystems\vcpkg.cmake
     cd ..
-    pause
     exit /b 1
 )
 
@@ -66,7 +72,6 @@ if %errorlevel% neq 0 (
     echo ERROR: Build failed
     echo Please check the compiler output above for details
     cd ..
-    pause
     exit /b 1
 )
 
@@ -92,9 +97,17 @@ if exist "build\business_scraper.exe" (
     echo.
     echo ERROR: Build failed - executable not found
     echo Check the build output above for error details
-    pause
     exit /b 1
 )
 
 echo.
-pause
+echo Copying required DLLs for distribution...
+if not exist "build\dlls" mkdir "build\dlls"
+copy "%USERPROFILE%\vcpkg\installed\x64-windows\bin\*.dll" "build\dlls\" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo DLLs copied successfully
+) else (
+    echo Warning: Could not copy DLLs (this is normal if vcpkg is not installed)
+)
+
+echo.

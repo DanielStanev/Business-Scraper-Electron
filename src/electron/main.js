@@ -12,6 +12,12 @@ class BusinessScraperApp {
         this.mainWindow = null;
         this.isDev = process.argv.includes('--dev');
         this.showDevTools = process.argv.includes('--devtools');
+        
+        // Fix GPU process issues on Windows
+        if (process.platform === 'win32') {
+            app.disableHardwareAcceleration();
+        }
+        
         this.setupApp();
     }
 
@@ -93,12 +99,27 @@ class BusinessScraperApp {
         // Configuration management
         ipcMain.handle('save-config', async (event, config) => {
             try {
-                const configPath = path.join(app.getPath('userData'), 'config.ini');
                 const configContent = `# Business Scraper Configuration
 [API]
 google_maps_api_key=${config.apiKey}
 `;
-                fs.writeFileSync(configPath, configContent);
+                
+                // Save to user data directory (for persistence)
+                const userConfigPath = path.join(app.getPath('userData'), 'config.ini');
+                fs.writeFileSync(userConfigPath, configContent);
+                
+                // Also save to application directory (where C++ backend expects it)
+                const appConfigPath = this.isDev 
+                    ? path.join(__dirname, '../../config.ini')  // Development: project root
+                    : path.join(path.dirname(process.execPath), 'config.ini'); // Production: exe directory
+                    
+                try {
+                    fs.writeFileSync(appConfigPath, configContent);
+                } catch (appError) {
+                    console.warn('Could not write to app directory:', appError.message);
+                    // This is not critical if user data directory worked
+                }
+                
                 store.set('config', config);
                 return { success: true };
             } catch (error) {
@@ -129,11 +150,29 @@ google_maps_api_key=${config.apiKey}
         ipcMain.handle('search-businesses', async (event, searchParams) => {
             return new Promise((resolve) => {
                 try {
-                    const executablePath = this.getExecutablePath();
-                    const configPath = path.join(app.getPath('userData'), 'config.ini');
-
-                    // Check if config exists
-                    if (!fs.existsSync(configPath)) {
+                    console.log('Starting search with params:', searchParams);
+                    
+                    let executablePath;
+                    try {
+                        executablePath = this.getExecutablePath();
+                        console.log('Using executable at:', executablePath);
+                    } catch (pathError) {
+                        console.error('Failed to get executable path:', pathError.message);
+                        resolve({
+                            success: false,
+                            error: `Executable not found: ${pathError.message}`
+                        });
+                        return;
+                    }
+                    
+                    // Check if config exists in app directory (where C++ backend looks for it)
+                    const appConfigPath = this.isDev 
+                        ? path.join(__dirname, '../../config.ini')
+                        : path.join(path.dirname(process.execPath), 'config.ini');
+                        
+                    console.log('Checking config at:', appConfigPath);
+                        
+                    if (!fs.existsSync(appConfigPath)) {
                         resolve({
                             success: false,
                             error: 'Configuration file not found. Please set up your Google Maps API key first.'
@@ -159,9 +198,20 @@ google_maps_api_key=${config.apiKey}
                     const outputFile = path.join(outputDir, `business-results-${timestamp}.${searchParams.outputFormat}`);
                     args.push('-o', outputFile);
 
+                    // Working directory for production
+                    const cwd = this.isDev 
+                        ? path.join(__dirname, '../..') // Development: project root
+                        : path.dirname(process.execPath); // Production: exe directory
+                    
+                    console.log('Spawn configuration:');
+                    console.log('  Executable:', executablePath);
+                    console.log('  Arguments:', args);
+                    console.log('  Working directory:', cwd);
+                    console.log('  Output file:', outputFile);
+
                     // Spawn the CLI process
                     const cliProcess = spawn(executablePath, args, {
-                        cwd: path.dirname(configPath),
+                        cwd: cwd,
                         env: { ...process.env }
                     });
 
@@ -170,16 +220,23 @@ google_maps_api_key=${config.apiKey}
 
                     cliProcess.stdout.on('data', (data) => {
                         const message = data.toString();
+                        console.log('STDOUT:', message);
                         stdout += message;
                         // Send real-time status updates
                         this.mainWindow?.webContents.send('search-status', message.trim());
                     });
 
                     cliProcess.stderr.on('data', (data) => {
-                        stderr += data.toString();
+                        const errorMessage = data.toString();
+                        console.log('STDERR:', errorMessage);
+                        stderr += errorMessage;
                     });
 
                     cliProcess.on('close', (code) => {
+                        console.log('Process closed with code:', code);
+                        console.log('Final stdout:', stdout);
+                        console.log('Final stderr:', stderr);
+                        
                         if (code === 0) {
                             // Extract CSV data from stdout
                             const csvData = this.extractCSVData(stdout);
@@ -387,12 +444,54 @@ google_maps_api_key=${config.apiKey}
     }
 
     getExecutablePath() {
+        const executableName = process.platform === 'win32' ? 'business_scraper.exe' : 'business_scraper';
+        
         if (this.isDev) {
             // In development, use the built executable
-            return path.join(__dirname, '../../build/business_scraper');
+            if (process.platform === 'win32') {
+                // On Windows, check both Release and root build directories
+                const releasePath = path.join(__dirname, '../../build/Release', executableName);
+                const buildPath = path.join(__dirname, '../../build', executableName);
+                
+                console.log('Development mode - checking paths:');
+                console.log('  Release path:', releasePath, 'exists:', fs.existsSync(releasePath));
+                console.log('  Build path:', buildPath, 'exists:', fs.existsSync(buildPath));
+                
+                if (fs.existsSync(releasePath)) {
+                    return releasePath;
+                } else if (fs.existsSync(buildPath)) {
+                    return buildPath;
+                } else {
+                    throw new Error(`Executable not found. Expected at: ${releasePath} or ${buildPath}`);
+                }
+            } else {
+                return path.join(__dirname, '../../build', executableName);
+            }
         } else {
             // In production, use the bundled executable
-            return path.join(process.resourcesPath, 'business_scraper');
+            const executablePath = path.join(process.resourcesPath, executableName);
+            console.log('Production mode - checking path:');
+            console.log('  Resources path:', process.resourcesPath);
+            console.log('  Executable path:', executablePath, 'exists:', fs.existsSync(executablePath));
+            
+            if (!fs.existsSync(executablePath)) {
+                // List files in resources directory for debugging
+                console.log('Files in resources directory:');
+                try {
+                    const files = fs.readdirSync(process.resourcesPath);
+                    files.forEach(file => {
+                        const filePath = path.join(process.resourcesPath, file);
+                        const stats = fs.statSync(filePath);
+                        console.log(`  ${file} ${stats.isDirectory() ? '(directory)' : '(file)'}`);
+                    });
+                } catch (err) {
+                    console.log('  Error reading directory:', err.message);
+                }
+                
+                throw new Error(`Executable not found at: ${executablePath}`);
+            }
+            
+            return executablePath;
         }
     }
 }

@@ -12,23 +12,29 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
 include_directories(include)
 
 # Find required packages
-find_package(PkgConfig REQUIRED)
-
-# Find libcurl
-find_package(CURL REQUIRED)
-if(NOT CURL_FOUND)
-    message(FATAL_ERROR "libcurl not found. Please install libcurl development package.")
-endif()
-
-# Find jsoncpp
-pkg_check_modules(JSONCPP REQUIRED jsoncpp)
-if(NOT JSONCPP_FOUND)
-    # Fallback for Windows - try to find jsoncpp differently
-    find_package(jsoncpp CONFIG)
-    if(jsoncpp_FOUND)
-        set(JSONCPP_LIBRARIES jsoncpp_lib)
-        set(JSONCPP_INCLUDE_DIRS "")
-    else()
+if(WIN32)
+    # On Windows, use vcpkg to find packages
+    find_package(CURL CONFIG REQUIRED)
+    find_package(jsoncpp CONFIG REQUIRED)
+    
+    # Set variables for compatibility
+    set(CURL_LIBRARIES CURL::libcurl)
+    set(JSONCPP_LIBRARIES JsonCpp::JsonCpp)
+    set(CURL_FOUND TRUE)
+    set(JSONCPP_FOUND TRUE)
+else()
+    # On Linux/macOS, use PkgConfig
+    find_package(PkgConfig REQUIRED)
+    
+    # Find libcurl
+    find_package(CURL REQUIRED)
+    if(NOT CURL_FOUND)
+        message(FATAL_ERROR "libcurl not found. Please install libcurl development package.")
+    endif()
+    
+    # Find jsoncpp
+    pkg_check_modules(JSONCPP REQUIRED jsoncpp)
+    if(NOT JSONCPP_FOUND)
         message(FATAL_ERROR "jsoncpp not found. Please install jsoncpp development package.")
     endif()
 endif()

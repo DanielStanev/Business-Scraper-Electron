@@ -9,9 +9,9 @@
     "dev": "electron . --dev",
     "dev-debug": "electron . --dev --devtools",
     "setup": "npm run build-cpp && npm run setup-config",
-    "setup-config": "test -f config.ini || cp config.template.ini config.ini",
+    "setup-config": "node -e \"const fs = require('fs'); if (!fs.existsSync('config.ini')) fs.copyFileSync('config.template.ini', 'config.ini')\"",
     "build": "electron-builder",
-    "build-cpp": "./build.sh",
+    "build-cpp": "node -e \"process.platform === 'win32' ? require('child_process').execSync('build.bat', {stdio: 'inherit'}) : require('child_process').execSync('./build.sh', {stdio: 'inherit'})\"",
     "pack": "npm run build-cpp && electron-builder --dir",
     "dist": "npm run build-cpp && electron-builder",
     "dist-win": "npm run build-cpp && electron-builder --win",
@@ -52,7 +52,7 @@
     "files": [
       "src/electron/**/*",
       "src/renderer/**/*",
-      "build/business_scraper",
+      "build/business_scraper*",
       "config.template.ini",
       "LICENSE",
       "LICENSE_THIRD_PARTY",
@@ -60,8 +60,9 @@
     ],
     "extraResources": [
       {
-        "from": "build/business_scraper",
-        "to": "business_scraper"
+        "from": "build/business_scraper*",
+        "to": ".",
+        "filter": ["business_scraper*"]
       },
       {
         "from": "config.template.ini",
@@ -81,6 +82,24 @@
         {
           "target": "portable",
           "arch": ["x64"]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "build/dlls/jsoncpp.dll",
+          "to": "jsoncpp.dll"
+        },
+        {
+          "from": "build/dlls/libcurl.dll",
+          "to": "libcurl.dll"
+        },
+        {
+          "from": "build/dlls/zlib1.dll",
+          "to": "zlib1.dll"
+        },
+        {
+          "from": "build/dlls/pkgconf-7.dll",
+          "to": "pkgconf-7.dll"
         }
       ],
       "icon": "assets/icon.ico",

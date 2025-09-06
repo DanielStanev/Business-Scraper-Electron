@@ -14,11 +14,11 @@ This version uses the C++ backend of the previous desktop app, but now uses Elec
 
 ## Screenshots
 
+### Processing View
+![Processing View](screenshots/output.png)
+
 ### Results Display
 ![Results View](screenshots/results.png)
-
-### Output File
-![Output File](screenshots/output.png)
 
 
 ## Prerequisites
@@ -36,10 +36,6 @@ The application can be packaged as both NSIS installer and MSI:
 
 ```bash
 npm run dist
-```
-or
-```powershell
-.\build-dist.bat
 ```
 
 This will create:

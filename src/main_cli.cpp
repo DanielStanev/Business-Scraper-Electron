@@ -1,6 +1,23 @@
 #include <iostream>
 #include <string>
-#include <getopt.h>
+#ifdef _WIN32
+    // Windows doesn't have getopt.h, use a simple alternative
+    #include <windows.h>
+    // Simple getopt implementation for Windows
+    extern char* optarg;
+    extern int optind;
+    struct option {
+        const char* name;
+        int has_arg;
+        int* flag;
+        int val;
+    };
+    #define no_argument 0
+    #define required_argument 1
+    int getopt_long(int argc, char* const argv[], const char* optstring, const struct option* longopts, int* longindex);
+#else
+    #include <getopt.h>
+#endif
 #include <cstdlib>
 #include <algorithm>
 
@@ -214,3 +231,87 @@ bool parse_command_line(int argc, char** argv, ProgramOptions& options) {
 
     return true;
 }
+
+#ifdef _WIN32
+// Simple getopt implementation for Windows
+char* optarg = nullptr;
+int optind = 1;
+
+int getopt_long(int argc, char* const argv[], const char* optstring, const struct option* longopts, int* longindex) {
+    static int current_arg = 1;
+    static int current_char = 1;
+    
+    if (current_arg >= argc) {
+        return -1;
+    }
+    
+    char* current = argv[current_arg];
+    
+    // Skip non-option arguments
+    if (current[0] != '-') {
+        current_arg++;
+        return getopt_long(argc, argv, optstring, longopts, longindex);
+    }
+    
+    // Handle long options
+    if (current[1] == '-') {
+        std::string arg = current + 2;
+        for (int i = 0; longopts[i].name; i++) {
+            std::string opt_name = longopts[i].name;
+            if (arg == opt_name || (longopts[i].has_arg && arg.find(opt_name + "=") == 0)) {
+                current_arg++;
+                if (longopts[i].has_arg) {
+                    size_t eq_pos = arg.find('=');
+                    if (eq_pos != std::string::npos) {
+                        static std::string arg_value = arg.substr(eq_pos + 1);
+                        optarg = const_cast<char*>(arg_value.c_str());
+                    } else if (current_arg < argc) {
+                        optarg = argv[current_arg++];
+                    } else {
+                        return '?';
+                    }
+                }
+                if (longindex) *longindex = i;
+                return longopts[i].val;
+            }
+        }
+        return '?';
+    }
+    
+    // Handle short options
+    char opt = current[current_char++];
+    
+    const char* opt_pos = strchr(optstring, opt);
+    if (!opt_pos) {
+        return '?';
+    }
+    
+    if (opt_pos[1] == ':') {
+        // This option requires an argument
+        if (current[current_char] != '\0') {
+            // Argument is attached to the option (like -r5)
+            optarg = current + current_char;
+            current_arg++;
+            current_char = 1;
+        } else {
+            // Argument is the next parameter (like -r 5)
+            current_arg++; // Move past the current option
+            if (current_arg < argc) {
+                optarg = argv[current_arg++];
+                current_char = 1;
+            } else {
+                return '?';
+            }
+        }
+    } else {
+        // Option doesn't require an argument
+        if (current[current_char] == '\0') {
+            current_arg++;
+            current_char = 1;
+        }
+    }
+    
+    optind = current_arg;
+    return opt;
+}
+#endif

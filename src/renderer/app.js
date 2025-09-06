@@ -32,6 +32,12 @@ class BusinessScraperApp {
         closeConfigBtn.addEventListener('click', () => this.hideConfigModal());
         cancelConfigBtn.addEventListener('click', () => this.hideConfigModal());
         configForm.addEventListener('submit', (e) => this.handleConfigSave(e));
+        
+        // API key validation on input change
+        const apiKeyField = document.getElementById('api-key');
+        if (apiKeyField) {
+            apiKeyField.addEventListener('input', () => this.validateApiKey());
+        }
 
         // Click outside modal to close
         configModal.addEventListener('click', (e) => {
@@ -70,9 +76,44 @@ class BusinessScraperApp {
                     apiKeyField.value = result.config.apiKey;
                 }
             }
+            // Check API key validity after loading
+            this.validateApiKey();
         } catch (error) {
             console.error('Failed to load configuration:', error);
+            this.validateApiKey();
         }
+    }
+
+    validateApiKey() {
+        const apiKeyField = document.getElementById('api-key');
+        const searchBtn = document.getElementById('search-btn');
+        const apiKey = apiKeyField ? apiKeyField.value : '';
+        
+        const isValidApiKey = apiKey && 
+                             apiKey.trim() !== '' && 
+                             apiKey.trim() !== 'YOUR_API_KEY_HERE';
+        
+        if (!isValidApiKey) {
+            // Show API key error status
+            this.setStatusState('api-key-error');
+            
+            // Disable search button and add tooltip
+            searchBtn.disabled = true;
+            searchBtn.classList.add('disabled');
+            searchBtn.title = 'You must set an API key before you begin searching';
+        } else {
+            // API key is valid, enable search
+            if (this.currentStage === 'api-key-error') {
+                this.setStatusState('idle');
+            }
+            
+            // Enable search button and remove tooltip
+            searchBtn.disabled = false;
+            searchBtn.classList.remove('disabled');
+            searchBtn.title = '';
+        }
+        
+        return isValidApiKey;
     }
 
     async setDefaultOutputDirectory() {
@@ -117,6 +158,10 @@ class BusinessScraperApp {
             if (result.success) {
                 this.hideConfigModal();
                 this.showSuccess('Configuration saved successfully.');
+                
+                // Validate API key after saving
+                this.validateApiKey();
+                
                 // Reset to idle after a brief moment
                 setTimeout(() => {
                     if (this.currentStage === 'complete') {
@@ -148,6 +193,11 @@ class BusinessScraperApp {
         event.preventDefault();
 
         if (this.isSearching) {
+            return;
+        }
+
+        // Validate API key first
+        if (!this.validateApiKey()) {
             return;
         }
 
